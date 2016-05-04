@@ -140,11 +140,7 @@ def main():
     home_work_base=[]
     home_work_base=init_home_work_db()
     simple_command=init_simple_command()
-    print("Enter login")
-    login=input()
-    print("Enter passwd")
-    passwd=input()
-    bot = auth_vk('5419077', login, passwd, 'wall,messages,photos')
+    bot = auth_vk('5419077', '89851906212', 'dicks228', 'wall,messages,photos')
     print("Ready!")
     wf_client = wolframalpha.Client("KW45EP-XHU7PVPVTX")
     while (True):
