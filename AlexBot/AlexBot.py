@@ -191,7 +191,7 @@ def main():
     bot = auth_vk('5419077', "89851906212", "dicks228", 'wall,messages,photos,audio')
     print("Ready!")
     wf_client = wolframalpha.Client("KW45EP-XHU7PVPVTX")
-    error_message="Упс! Что то пошло не так... Попробуйте повторить запрос. Если эта ошибка происходит постоянно, пожалуйста, свяжитесь с vk.com/id96494615 для устранения проблеммы"
+    error_message="Упс! Что то пошло не так... Ты опять все поломал! Попробуйте повторить запрос. Если эта ошибка происходит постоянно, пожалуйста, свяжитесь с vk.com/id96494615 для устранения проблеммы"
     while (True):
         try:
             poll = bot.messages.getLongPollServer()
