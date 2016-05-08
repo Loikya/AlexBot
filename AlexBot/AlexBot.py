@@ -9,6 +9,7 @@ import time
 import datetime
 import flickr
 from random_words import RandomWords
+import wikipedia
 def auth_vk(id, login, passwd, scope):
     session = vk.AuthSession(app_id=id, user_login=login, user_password=passwd, scope=scope)
     return vk.API(session, v='5.50')
@@ -185,7 +186,17 @@ def generate_post(who):
         attach="photo"+str(response[0]['owner_id'])+"_"+str(response[0]['id'])+",audio"+str(ownerid[0])+"_"+str(audioid)
         bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=text.text, attachment=attach)
 
-    
+def send_wiki_info(who, text):
+    answ=" ".join(text)
+    if(answ[-1] == "?"): answ = answ[:-1]
+    wikipedia.set_lang("ru")
+    try:
+        resp=wikipedia.summary(answ, sentences=6, chars=1, auto_suggest=False, redirect=True)
+    except wikipedia.exceptions.DisambiguationError as error:
+        resp=wikipedia.summary(error.options[0], sentences=6, chars=1, auto_suggest=False, redirect=True)
+    except  wikipedia.exceptions.WikipediaException:
+        resp=wikipedia.summary(answ, sentences=6, chars=0, auto_suggest=True, redirect=True)
+    bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=resp)
 
     
 
@@ -264,7 +275,14 @@ def main():
                     print("Ошибка при генерации поста")
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
                     continue
-                
+            if (mesg[6].split(" ")[:3] == ["Саныч,", "что", "такое"]):
+              try:
+                    send_wiki_info(mesg[3], mesg[6].split(" ")[3:])
+                    continue
+              except Exception:
+                    print("Ошибка при запросе в вики")
+                    bot.messages.send(peer_id=mesg[3], message="Что то тут не то... В википедии нет такой страницы, или произошла другая ошибка! Попробуйте еще раз!", random_id=random.randint(0, 200000))
+                    continue               
             if (mesg[6] in simple_command):
                 try:
                     send_mesg(mesg[3], simple_command[mesg[6]])
