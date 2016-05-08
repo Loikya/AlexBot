@@ -131,8 +131,67 @@ def find_hw(who, text):
                 time.sleep(0.4)    
         return
     bot.messages.send(peer_id=who, message="Неправильный формат!", random_id=random.randint(0, 200000))
+def get_audio_user():
+    trigger=0
+    while(trigger == 0):
+        list_id=str(random.randint(5000, 363720000))
+        for i in range(0,9):
+            list_id= list_id +","+ str(random.randint(5000, 363720000) )
+        ownerid=bot.execute.get_audioid(list=list_id)
+        if(ownerid !=0): 
+            trigger = 1
+    return ownerid
+def get_random_audio(number):
+    result=""
+    k=0
+    need_num=number
+    while(k != number):
+        ownerid=get_audio_user()
+        list_audio=bot.audio.get(owner_id=ownerid[0], count=ownerid[1])
+        count=list_audio["count"]
+        need_num=number-k
+        if(need_num > count): 
+            need_num=int(count/2)
+            while(need_num !=0):
+                audioid=list_audio["items"]
+                audioid=audioid[need_num-1]
+                audioid=audioid["id"]
+                if (k == 0):
+                    result=result+"audio"+str(ownerid[0])+"_"+str(audioid)
+                    need_num-=1
+                    k+=1
+                else:
+                    result=result+",audio"+str(ownerid[0])+"_"+str(audioid)
+                    need_num-=1
+                    k+=1
+        else: 
+            need_num= number-k
+            while(need_num !=0):
+                num=random.randint(0, count)
+                try:
+                    audioid=list_audio["items"]
+                    audioid=audioid[num]
+                    audioid=audioid["id"]
+                except IndexError:
+                    print("Index!")
+                    continue
+                if (k == 0):
+                    result=result+"audio"+str(ownerid[0])+"_"+str(audioid)
+                    need_num-=1
+                    k+=1
+                else:
+                    result=result+",audio"+str(ownerid[0])+"_"+str(audioid)
+                    need_num-=1
+                    k+=1
+        time.sleep(0.5)
+    return result
 
-def generate_post(who):
+def generate_post(who, num):
+    if(len(num) > 1):
+        if(int(num[1]) < 7):
+            num = int(num[1])
+        else: num = 1
+    else: num = 1
     rw = RandomWords()
     bot.messages.send(peer_id=who, message="Подготавливаю пост, ждите(это может быть быстро, а может долго. Производительность рандомная, также как и генерируемый пост...)", random_id=random.randint(0, 200000))
     """p = requests.get("https://unsplash.it/900/600/?random")"""
@@ -157,33 +216,11 @@ def generate_post(who):
     photo1=result['photo'] 
     hash1=result['hash'] 
     server1=result['server']
-    
-
-    trigger=0
-    while(trigger == 0):
-        list_id=str(random.randint(5000, 363720000))
-        for i in range(0,9):
-            list_id= list_id +","+ str(random.randint(5000, 363720000) )
-        ownerid=bot.execute.get_audioid(list=list_id)
-        if(ownerid !=0): 
-            trigger = 1
-               
-
-    list_audio=bot.audio.get(owner_id=ownerid[0], count=ownerid[1])
-    num=random.randint(0, list_audio["count"]-1)
-    try:
-        audioid=list_audio["items"]
-        audioid=audioid[num]
-        audioid=audioid["id"]
-    except IndexError:
-        print("Index!")
-        audioid=list_audio["items"]
-        audioid=audioid[ownerid[1]-num-1]
-        audioid=audioid["id"]
+  
     text = requests.get("http://api.forismatic.com/api/1.0/?method=getQuote&key=457653&format=text&lang=ru")
     if(photo1 != '[]'):
         response = bot.photos.saveMessagesPhoto(server=server1, photo=photo1,   hash=hash1) 
-        attach="photo"+str(response[0]['owner_id'])+"_"+str(response[0]['id'])+",audio"+str(ownerid[0])+"_"+str(audioid)
+        attach="photo"+str(response[0]['owner_id'])+"_"+str(response[0]['id'])+","+get_random_audio(num)
         bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=text.text, attachment=attach)
 
 def send_wiki_info(who, text):
@@ -198,7 +235,14 @@ def send_wiki_info(who, text):
         resp=wikipedia.summary(answ, sentences=6, chars=0, auto_suggest=True, redirect=True)
     bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=resp)
 
-    
+def send_random_audio(who, num):
+    if(len(num) > 1):
+        if(int(num[1]) < 7):
+            num = int(num[1])
+        else: num = 1
+    else: num = 1
+    list_id=get_random_audio(num)
+    bot.messages.send(peer_id=who, random_id=random.randint(0, 200000), attachment=list_id)
 
 def main():
     global bot
@@ -269,10 +313,11 @@ def main():
                     continue
             if (mesg[6].split(" ")[0] == "/пост"):
                try:
-                    generate_post(mesg[3])
+                    generate_post(mesg[3], mesg[6].split(" "))
                     continue
                except Exception:
                     print("Ошибка при генерации поста")
+                    time.sleep(1)
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
                     continue
             if (mesg[6].split(" ")[:3] == ["Саныч,", "что", "такое"]):
@@ -282,7 +327,17 @@ def main():
               except Exception:
                     print("Ошибка при запросе в вики")
                     bot.messages.send(peer_id=mesg[3], message="Что то тут не то... В википедии нет такой страницы, или произошла другая ошибка! Попробуйте еще раз!", random_id=random.randint(0, 200000))
-                    continue               
+                    continue   
+            if (mesg[6].split(" ")[0] == "/песенки"):
+               try:
+                    send_random_audio(mesg[3], mesg[6].split(" "))
+                    continue
+               except Exception as error:
+                    time.sleep(1)
+                    print("Ошибка при отправке музыки")
+                    bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
+                    print(error)
+                    continue            
             if (mesg[6] in simple_command):
                 try:
                     send_mesg(mesg[3], simple_command[mesg[6]])
