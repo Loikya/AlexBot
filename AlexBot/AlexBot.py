@@ -7,6 +7,8 @@ import random
 import re
 import time
 import datetime
+import flickr
+from random_words import RandomWords
 def auth_vk(id, login, passwd, scope):
     session = vk.AuthSession(app_id=id, user_login=login, user_password=passwd, scope=scope)
     return vk.API(session, v='5.50')
@@ -14,7 +16,7 @@ def auth_vk(id, login, passwd, scope):
 def send_mesg(who, text):
     attach=re.findall('{\w*\S*\w*}', text)
     if(len(attach) != 0):
-        bot.messages.send(peer_id=who, message=re.sub('{\w*\S*\w*}', "", text), random_id=random.randint(0, 200000), attachment=attach[1][1:-1])
+        bot.messages.send(peer_id=who, message=re.sub('{\w*\S*\w*}', "", text), random_id=random.randint(0, 200000), attachment=attach[0][1:-1])
     else:
         bot.messages.send(peer_id=who, message=text, random_id=random.randint(0, 200000))
 
@@ -130,8 +132,13 @@ def find_hw(who, text):
     bot.messages.send(peer_id=who, message="Неправильный формат!", random_id=random.randint(0, 200000))
 
 def generate_post(who):
-    bot.messages.send(peer_id=who, message="Подгатавливаю пост, ждите(это может быть быстро, а может долго. Производительность рандомная, также как и генерируемый пост...)", random_id=random.randint(0, 200000))
-    p = requests.get("http://loremflickr.com/900/600/all")
+    rw = RandomWords()
+    bot.messages.send(peer_id=who, message="Подготавливаю пост, ждите(это может быть быстро, а может долго. Производительность рандомная, также как и генерируемый пост...)", random_id=random.randint(0, 200000))
+    """p = requests.get("https://unsplash.it/900/600/?random")"""
+
+    word = rw.random_word()
+    url = flickr.get_random_img(word)
+    p = requests.get(url)
     out = open("random.jpg", "wb")
     out.write(p.content)
     out.close()
@@ -151,29 +158,32 @@ def generate_post(who):
     server1=result['server']
     
 
-    count=0
+    trigger=0
+    while(trigger == 0):
+        list_id=str(random.randint(5000, 363720000))
+        for i in range(0,9):
+            list_id= list_id +","+ str(random.randint(5000, 363720000) )
+        ownerid=bot.execute.get_audioid(list=list_id)
+        if(ownerid !=0): 
+            trigger = 1
+               
 
-    while(count == 0):
-        try:
-            ownerid=random.randint(5000, 363720000)
-            count=bot.audio.getCount(owner_id=ownerid)
-            time.sleep(0.1)
-        except 6:
-                    print("Запросы")
-                    time.sleep(0.8)
-                    continue
-
-        
-
-    list_audio=bot.audio.get(owner_id=ownerid)
-    num=random.randint(0, count)
-    audioid=list_audio["items"]
-    audioid=audioid[num]
-    audioid=audioid["id"]
+    list_audio=bot.audio.get(owner_id=ownerid[0], count=ownerid[1])
+    num=random.randint(0, list_audio["count"]-1)
+    try:
+        audioid=list_audio["items"]
+        audioid=audioid[num]
+        audioid=audioid["id"]
+    except IndexError:
+        print("Index!")
+        audioid=list_audio["items"]
+        audioid=audioid[ownerid[1]-num-1]
+        audioid=audioid["id"]
+    text = requests.get("http://api.forismatic.com/api/1.0/?method=getQuote&key=457653&format=text&lang=ru")
     if(photo1 != '[]'):
         response = bot.photos.saveMessagesPhoto(server=server1, photo=photo1,   hash=hash1) 
-        attach="photo"+str(response[0]['owner_id'])+"_"+str(response[0]['id'])+",audio"+str(ownerid)+"_"+str(audioid)
-        bot.messages.send(peer_id=who, random_id=random.randint(0, 200000), attachment=attach)
+        attach="photo"+str(response[0]['owner_id'])+"_"+str(response[0]['id'])+",audio"+str(ownerid[0])+"_"+str(audioid)
+        bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=text.text, attachment=attach)
 
     
 
@@ -247,19 +257,19 @@ def main():
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
                     continue
             if (mesg[6].split(" ")[0] == "/пост"):
-                try:
+               try:
                     generate_post(mesg[3])
                     continue
-                except IndexError:
-                    print("Индекс")
+               except Exception:
+                    print("Ошибка при генерации поста")
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
                     continue
                 
-            continue
             if (mesg[6] in simple_command):
                 try:
                     send_mesg(mesg[3], simple_command[mesg[6]])
                     continue
+
                 except Exception:
                     print("Ошибка при отправке команды")
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
