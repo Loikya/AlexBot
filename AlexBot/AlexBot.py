@@ -2,6 +2,7 @@
 import wolframalpha      
 import vk
 import requests
+import shelve
 import pickle
 import random
 import re
@@ -10,6 +11,7 @@ import datetime
 import flickr
 from random_words import RandomWords
 import wikipedia
+import multiprocessing
 def auth_vk(id, login, passwd, scope):
     session = vk.AuthSession(app_id=id, user_login=login, user_password=passwd, scope=scope)
     return vk.API(session, v='5.50')
@@ -244,11 +246,33 @@ def send_random_audio(who, num):
     list_id=get_random_audio(num)
     bot.messages.send(peer_id=who, random_id=random.randint(0, 200000), attachment=list_id)
 
+def set_notice(who, text):
+    jobs_base=shelve.open('jobs.db')
+    jobs_base[datetime.datetime.strptime(text[1]+" "+text[2], "%d.%m.%y %H:%M").strftime('%a %b %d %H:%M %Y')] = [send_mesg, {"who":who, "text":"[!Напоминание!] "+" ".join(text[3:])}]
+    jobs_base.close()
+
+
+def test():
+   global bot 
+   bot = auth_vk('5419077', "89851906212", "dicks228", 'wall,messages,photos,audio')
+   global jobs_base
+   while(True):
+       jobs_base=shelve.open('jobs.db')
+       for times in jobs_base:
+           print(times)
+           if (times == datetime.datetime.now().strftime('%a %b %d %H:%M %Y')): 
+              print(times)
+              jobs_base[times][0](**jobs_base[times][1])
+              del jobs_base[times]
+       jobs_base.close()
+   
+
 def main():
     global bot
     global wf_client
     global simple_command
     global home_work_base
+    global jobs_base
     simple_command={}
     home_work_base=[]
     home_work_base=init_home_work_db()
@@ -257,6 +281,9 @@ def main():
     print("Ready!")
     wf_client = wolframalpha.Client("KW45EP-XHU7PVPVTX")
     error_message="Упс! Что то пошло не так... Ты опять все поломал! Попробуйте повторить запрос. Если эта ошибка происходит постоянно, пожалуйста, свяжитесь с vk.com/id96494615 для устранения проблеммы"
+    proc = multiprocessing.Process(target = test)
+    proc.start()
+    #jobs_base[datetime.datetime(2016, 5, 10, 13, 42).strftime('%a %b %d %H:%M:%S %Y')] = generate_post
     while (True):
         try:
             poll = bot.messages.getLongPollServer()
@@ -337,7 +364,17 @@ def main():
                     print("Ошибка при отправке музыки")
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
                     print(error)
-                    continue            
+                    continue         
+            if (mesg[6].split(" ")[0] == "/напомнить"):
+               try:
+                    set_notice(mesg[3], mesg[6].split(" "))
+                    continue
+               except Exception as error:
+                    time.sleep(1)
+                    print("Ошибка при отправке добавлении напоминания!")
+                    bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
+                    print(error)
+                    continue             
             if (mesg[6] in simple_command):
                 try:
                     send_mesg(mesg[3], simple_command[mesg[6]])
