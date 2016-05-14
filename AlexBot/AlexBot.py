@@ -12,6 +12,13 @@ import flickr
 from random_words import RandomWords
 import wikipedia
 import multiprocessing
+from notice import *
+from time import mktime
+import parsedatetime
+import shelve
+import datetime
+import json
+
 def auth_vk(id, login, passwd, scope):
     session = vk.AuthSession(app_id=id, user_login=login, user_password=passwd, scope=scope)
     return vk.API(session, v='5.50')
@@ -188,14 +195,56 @@ def get_random_audio(number):
         time.sleep(0.5)
     return result
 
-def generate_post(who, num):
+def add_task(who, out, x):
+    jobs_base=shelve.open('jobs.db')
+  #  c = parsedatetime.Constants(localeID="ru_RU", usePyICU=False)
+    cal = parsedatetime.Calendar()
+    time1, parse_status = cal.parse(x)
+    time1=datetime.datetime.fromtimestamp(mktime(time1)).strftime('%a %b %d %H:%M %Y')
+    jobs_base[time1]=[send_mesg, {"who":who, "text":"[!Напоминание!] "+out}]
+    send_mesg(who, "Я напомню вам: "+"'"+out+"'. "+ "Дата: " + time1)
+    jobs_base.close()
+
+def set_notice(who, mesg):
+        get = mesg
+        text = get+' ' # добавляем в конец пробел, чтобы отрабатывать уведомления типа "напомнить мне через 10 минут". Если бы пробела не было, параметр clock был бы пуст. В параметре clock после слова "час" тоже стоит пробел, чтобы различать поиск "час" и "часов".
+        find = re.findall('ерез [0-9]+|В [0-9:-]+|в [0-9:-]+|ерез час',text)
+
+        if get: # убеждаемся, заполнено ли поле ввода
+            if find: # убеждаемся, указано ли время напоминания
+                what = find[0].split()
+                timex = what[1].replace('-',':').replace('час','1')
+
+                if len(timex) > 2: # заменяет выражения типа "в 10" на "в 10:00"
+                    time = timex
+                else:
+                    time = timex+':00'	
+                
+                whatdate, delwhatdate = get_datex(text)
+                when, delday = get_day(text)
+                how, delclock = get_clock(text)
+
+                reps = {'ерез':'at now + %s %s' % (timex,how),'В':'at %s %s %s' % (time,when,whatdate),'в':'at %s %s %s' % (time,when,whatdate)}
+                wors = {'Через %s %s' % (what[1],delclock):'','через %s %s' % (what[1],delclock):'','В %s ' % what[1]:'','в %s ' % what[1]:'', '%s' % delday:'', 'Через час':'', 'через час':'', '%s' % delwhatdate:'',} # какие слова мы будем удалять
+                x = replace_all(what[0], reps) # это время, на которое запланировано появление напоминания
+                out = replace_all(text, wors) # это текст напоминания
+
+                add_task(who, out, x)
+                
+            else:
+                return 0
+        else:
+            return 0
+
+def generate_post(who, num, flag):
     if(len(num) > 1):
         if(int(num[1]) < 7):
             num = int(num[1])
         else: num = 1
     else: num = 1
     rw = RandomWords()
-    bot.messages.send(peer_id=who, message="Подготавливаю пост, ждите(это может быть быстро, а может долго. Производительность рандомная, также как и генерируемый пост...)", random_id=random.randint(0, 200000))
+    if(flag == 0):
+        bot.messages.send(peer_id=who, message="Подготавливаю пост, ждите(это может быть быстро, а может долго. Производительность рандомная, также как и генерируемый пост...)", random_id=random.randint(0, 200000))
     """p = requests.get("https://unsplash.it/900/600/?random")"""
 
     word = rw.random_word()
@@ -207,7 +256,9 @@ def generate_post(who, num):
 
     img = {'photo': ('img.jpg', open(r'random.jpg', 'rb'))}
     # Получаем ссылку для загрузки изображений
-    response = bot.photos.getMessagesUploadServer()
+    if(flag == 0):
+        response = bot.photos.getMessagesUploadServer()
+    else: response = bot.photos.getWallUploadServer()
     upload_url = response['upload_url']
 
     # Загружаем изображение на url
@@ -221,9 +272,13 @@ def generate_post(who, num):
   
     text = requests.get("http://api.forismatic.com/api/1.0/?method=getQuote&key=457653&format=text&lang=ru")
     if(photo1 != '[]'):
-        response = bot.photos.saveMessagesPhoto(server=server1, photo=photo1,   hash=hash1) 
+        if(flag == 0): 
+            response = bot.photos.saveMessagesPhoto(server=server1, photo=photo1,   hash=hash1) 
+        else: response = bot.photos.saveWallPhoto(user_id="360474541", server=server1, photo=photo1,   hash=hash1)
         attach="photo"+str(response[0]['owner_id'])+"_"+str(response[0]['id'])+","+get_random_audio(num)
-        bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=text.text, attachment=attach)
+        if(flag == 0):
+            bot.messages.send(peer_id=who, random_id=random.randint(0, 200000),message=text.text, attachment=attach)
+        else: bot.wall.post(owner_id="360474541", guid=random.randint(0, 200000),message=text.text, attachment=attach)
 
 def send_wiki_info(who, text):
     answ=" ".join(text)
@@ -246,24 +301,144 @@ def send_random_audio(who, num):
     list_id=get_random_audio(num)
     bot.messages.send(peer_id=who, random_id=random.randint(0, 200000), attachment=list_id)
 
-def set_notice(who, text):
-    jobs_base=shelve.open('jobs.db')
-    jobs_base[datetime.datetime.strptime(text[1]+" "+text[2], "%d.%m.%y %H:%M").strftime('%a %b %d %H:%M %Y')] = [send_mesg, {"who":who, "text":"[!Напоминание!] "+" ".join(text[3:])}]
-    jobs_base.close()
+def get_timetable(group, mode):
+    num_sem=2
+    year_now=2016
+    base1=requests.get("http://timetable.mephist.ru/getEvents.php?get=settings&rType=json")
+    base1=base1.json()
+    group=group.split("-")
+    base_group=base1["groups"]
+    for gr in base_group:
+        if (gr["letter"] == group[0][0] and gr["num"] == group[1] and year_now-int(group[0][1:])/num_sem == int(gr["StartYear"])): 
+            group_id = gr["id"]
+    if (mode == "day"):
+        start = datetime.datetime.today().date()
+        end = start+datetime.timedelta(days=1)
+        start_t = time.mktime(start.timetuple())
+        end_t = time.mktime(end.timetuple())
+    elif(mode == "week"):
+        start=datetime.datetime.today().date() - datetime.timedelta(days=datetime.datetime.today().date().weekday())
+        end = start+datetime.timedelta(days=7)
+        start_t = time.mktime(start.timetuple())
+        end_t = time.mktime(end.timetuple())
+    timetable = requests.get("http://timetable.mephist.ru/getEvents.php?rType=json&start="+str(start_t)+"&end="+str(end_t)+"&groupId="+str(group_id)+"&tz=-180")
+    timetable=timetable.json()
+    return timetable
 
+def send_timetable(who, mesg):
+    if(len(mesg) == 2):
+        timetable = get_timetable(mesg[1], "day")
+        text = """
+        _________________________
+        Сегодня:
+        _________________________\n"""
+        for subj in timetable:
+            text=text+"Предмет: "+ subj["title"]+"\n"
+            text=text+"Преподователь: "+ subj["teachers"]+"\n"
+            text=text+"Аудитория: "+ subj["auditories"]+"\n"
+            text=text+"Тип занятия: "+ subj["type"]+"\n"
+            text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+            text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+            text=text+"\n_________________________\n"
+    elif(len(mesg)==3 and mesg[2]=="неделя"):
+        timetable = get_timetable(mesg[1], "week")
+        text = """
+        _________________________
+        Понедельник:
+        _________________________\n"""
+        for subj in timetable:
+            if(datetime.datetime.fromtimestamp(int(subj["start"])).weekday() == 0):
+                text=text+"Предмет: "+ subj["title"]+"\n"
+                text=text+"Преподователь: "+ subj["teachers"]+"\n"
+                text=text+"Аудитория: "+ subj["auditories"]+"\n"
+                text=text+"Тип занятия: "+ subj["type"]+"\n"
+                text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+                text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+                text=text+"\n_________________________\n"
+        text =text+ """
+        _________________________
+        Вторник:
+        _________________________\n"""
+        for subj in timetable:
+            if(datetime.datetime.fromtimestamp(int(subj["start"])).weekday() == 1):
+                text=text+"Предмет: "+ subj["title"]+"\n"
+                text=text+"Преподователь: "+ subj["teachers"]+"\n"
+                text=text+"Аудитория: "+ subj["auditories"]+"\n"
+                text=text+"Тип занятия: "+ subj["type"]+"\n"
+                text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+                text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+                text=text+"\n_________________________\n"
+        text =text+ """
+        _________________________
+        Среда:
+        _________________________\n"""
+        for subj in timetable:
+            if(datetime.datetime.fromtimestamp(int(subj["start"])).weekday() == 2):
+                text=text+"Предмет: "+ subj["title"]+"\n"
+                text=text+"Преподователь: "+ subj["teachers"]+"\n"
+                text=text+"Аудитория: "+ subj["auditories"]+"\n"
+                text=text+"Тип занятия: "+ subj["type"]+"\n"
+                text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+                text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+                text=text+"\n_________________________\n"
+        text =text+ """
+        _________________________
+        Четверг:
+        _________________________\n"""
+        for subj in timetable:
+            if(datetime.datetime.fromtimestamp(int(subj["start"])).weekday() == 3):
+                text=text+"Предмет: "+ subj["title"]+"\n"
+                text=text+"Преподователь: "+ subj["teachers"]+"\n"
+                text=text+"Аудитория: "+ subj["auditories"]+"\n"
+                text=text+"Тип занятия: "+ subj["type"]+"\n"
+                text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+                text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+                text=text+"\n_________________________\n"
+        text =text+ """
+        _________________________
+        Пятница:
+        _________________________\n"""
+        for subj in timetable:
+            if(datetime.datetime.fromtimestamp(int(subj["start"])).weekday() == 4):
+                text=text+"Предмет: "+ subj["title"]+"\n"
+                text=text+"Преподователь: "+ subj["teachers"]+"\n"
+                text=text+"Аудитория: "+ subj["auditories"]+"\n"
+                text=text+"Тип занятия: "+ subj["type"]+"\n"
+                text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+                text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+                text=text+"\n_________________________\n"
+        text =text+ """
+        _________________________
+        Суббота:
+        _________________________\n"""
+        for subj in timetable:
+            if(datetime.datetime.fromtimestamp(int(subj["start"])).weekday() == 5):
+                text=text+"Предмет: "+ subj["title"]+"\n"
+                text=text+"Преподователь: "+ subj["teachers"]+"\n"
+                text=text+"Аудитория: "+ subj["auditories"]+"\n"
+                text=text+"Тип занятия: "+ subj["type"]+"\n"
+                text=text+"Начало занятия: "+ datetime.datetime.fromtimestamp(int(subj["start"])).strftime('%H:%M')+"\n"
+                text=text+"Окончание занятия: "+ datetime.datetime.fromtimestamp(int(subj["end"])).strftime('%H:%M')+"\n"
+                text=text+"\n_________________________\n"
+    send_mesg(who, text)
 
-def test():
+def start_notice():
    global bot 
    bot = auth_vk('5419077', "89851906212", "dicks228", 'wall,messages,photos,audio')
+   print("login 2")
    global jobs_base
+   cur_time=datetime.datetime.now()
    while(True):
        jobs_base=shelve.open('jobs.db')
-       for times in jobs_base:
-           print(times)
+       for times in jobs_base:           
            if (times == datetime.datetime.now().strftime('%a %b %d %H:%M %Y')): 
               print(times)
               jobs_base[times][0](**jobs_base[times][1])
               del jobs_base[times]
+       if(datetime.timedelta(hours=4) < (datetime.datetime.now()) - cur_time):
+           jobs_base["post"][0](**jobs_base["post"][1])
+           cur_time=datetime.datetime.now()
+      # print(datetime.datetime.now()-cur_time)
        jobs_base.close()
    
 
@@ -272,7 +447,9 @@ def main():
     global wf_client
     global simple_command
     global home_work_base
-    global jobs_base
+    jobs_base=shelve.open('jobs.db')
+    jobs_base["post"]=[generate_post, {"who":360474541, "num":"1", "flag":1}]
+    jobs_base.close()
     simple_command={}
     home_work_base=[]
     home_work_base=init_home_work_db()
@@ -280,10 +457,9 @@ def main():
     bot = auth_vk('5419077', "89851906212", "dicks228", 'wall,messages,photos,audio')
     print("Ready!")
     wf_client = wolframalpha.Client("KW45EP-XHU7PVPVTX")
-    error_message="Упс! Что то пошло не так... Ты опять все поломал! Попробуйте повторить запрос. Если эта ошибка происходит постоянно, пожалуйста, свяжитесь с vk.com/id96494615 для устранения проблеммы"
-    proc = multiprocessing.Process(target = test)
+    error_message="Упс! Что то пошло не так... Попробуйте повторить запрос. Если эта ошибка происходит постоянно, пожалуйста, свяжитесь с vk.com/id96494615 для устранения проблеммы"
+    proc = multiprocessing.Process(target = start_notice)
     proc.start()
-    #jobs_base[datetime.datetime(2016, 5, 10, 13, 42).strftime('%a %b %d %H:%M:%S %Y')] = generate_post
     while (True):
         try:
             poll = bot.messages.getLongPollServer()
@@ -340,11 +516,32 @@ def main():
                     continue
             if (mesg[6].split(" ")[0] == "/пост"):
                try:
-                    generate_post(mesg[3], mesg[6].split(" "))
+                    generate_post(mesg[3], mesg[6].split(" "), 0)
                     continue
-               except Exception:
+               except Exception as error:
                     print("Ошибка при генерации поста")
                     time.sleep(1)
+                    print(error)
+                    bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
+                    continue
+            if (mesg[6].split(" ")[0] == "/ппост"):
+               try:
+                    generate_post(mesg[3], mesg[6].split(" "), 1)
+                    continue
+               except Exception as error:
+                    print("Ошибка при генерации поста")
+                    time.sleep(1)
+                    print(error)
+                    bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
+                    continue
+            if (mesg[6].split(" ")[0] == "/расписание"):
+               try:
+                    send_timetable(mesg[3], mesg[6].split(" "))
+                    continue
+               except Exception as error:
+                    print("Ошибка при генерации поста")
+                    time.sleep(1)
+                    print(error)
                     bot.messages.send(peer_id=mesg[3], message=error_message, random_id=random.randint(0, 200000))
                     continue
             if (mesg[6].split(" ")[:3] == ["Саныч,", "что", "такое"]):
@@ -367,7 +564,7 @@ def main():
                     continue         
             if (mesg[6].split(" ")[0] == "/напомнить"):
                try:
-                    set_notice(mesg[3], mesg[6].split(" "))
+                    set_notice(mesg[3], mesg[6][11:])
                     continue
                except Exception as error:
                     time.sleep(1)
